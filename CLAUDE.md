@@ -139,7 +139,7 @@ The create/edit flow — creating a `.drawio`/`.dwb` file from the "+" menu, the
 
 1. **Config files** (`RegisterMimeType::registerForNewFiles`)
    - Writes to `config/mimetypemapping.json` (extension → MIME type)
-   - Writes to `config/mimetypealiases.json` (MIME type → icon alias)
+   - Does **not** write `config/mimetypealiases.json` — see the integrity section below
 
 2. **Filecache update** (`RegisterMimeType::registerForExistingFiles`)
    - Updates DB filecache so existing `.drawio`/`.dwb` files have the correct MIME type
@@ -152,7 +152,16 @@ The create/edit flow — creating a `.drawio`/`.dwb` file from the "+" menu, the
    - `getAllMappings()` must be called before `registerType()` — it forces the detector to load
      the default mappings, which would otherwise be skipped afterwards
 
-Since 4.3.0 the app intentionally does **not** copy file type icons to `core/img/filetypes/` and does **not** regenerate `core/js/mimetypelist.js` (the old steps 3/4). Modifying core files triggered integrity check warnings (https://github.com/jgraph/drawio-nextcloud/issues/70), so this was dropped; `.drawio`/`.dwb` files show a generic file icon and admins can follow the FAQ (linked from the admin settings) to add icons manually. Do not reintroduce core file modifications.
+### Code integrity (do not touch the Nextcloud core)
+
+Since 4.3.0 the app intentionally does **not** copy file type icons to `core/img/filetypes/` and does **not** regenerate `core/js/mimetypelist.js`. Modifying core files makes `occ integrity:check-core` fail (https://github.com/jgraph/drawio-nextcloud/issues/70). `.drawio`/`.dwb` files show a generic file icon instead, and admins can follow the FAQ (linked from the admin settings) to add icons manually. **Do not reintroduce core file modifications.**
+
+`RegisterMimeType` also cleans up what versions up to 4.2.5 left behind, once per instance (guarded by the `LegacyCoreCleanupDone` app config flag so an admin who deliberately restores the icons afterwards keeps them):
+
+- deletes `core/img/filetypes/drawio.svg` and `dwb.svg` (reported as `EXTRA_FILE`)
+- removes the drawio entries from `config/mimetypealiases.json`, and never writes them again: the aliases only pointed at those core icons, and any later `occ maintenance:mimetype:update-js` would bake them back into `core/js/mimetypelist.js`
+
+`core/js/mimetypelist.js` itself **cannot be repaired by the app** — regenerating it never reproduces the signed file (verified on NC 33: even with every drawio entry removed the hash differs), so the original has to be copied from the Nextcloud release archive of the same version. That stays an admin step.
 
 ### Testing the Create/Edit Flow
 After any change to MIME type registration, always verify:

@@ -19,6 +19,7 @@ class UnregisterMimeType extends MimeTypeMigration
 
         $this->unregisterForExistingFiles();
         $this->unregisterForNewFiles();
+        $this->removeLegacyCoreIcons($output);
 
         $output->info('The mimetype was successfully unregistered.');
     }
@@ -36,15 +37,12 @@ class UnregisterMimeType extends MimeTypeMigration
 
     private function unregisterForNewFiles(): void
     {
-        $configDir = \OC::$configDir;
-
-        $this->removeFromFile($configDir . self::CUSTOM_MIMETYPEALIASES, [
-            'application/x-drawio' => 'drawio',
-            'application/x-drawio-wb' => 'dwb',
-        ]);
-        $this->removeFromFile($configDir . self::CUSTOM_MIMETYPEMAPPING, [
+        $this->removeFromFile(\OC::$configDir . self::CUSTOM_MIMETYPEMAPPING, [
             'drawio' => ['application/x-drawio'],
             'dwb' => ['application/x-drawio-wb'],
         ]);
+
+        // Written by app versions up to 4.2.x
+        $this->removeFromFile(\OC::$configDir . self::CUSTOM_MIMETYPEALIASES, self::LEGACY_ALIASES);
     }
 }

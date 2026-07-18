@@ -3,7 +3,7 @@
     <h2>Diagramming</h2>
 
     <div class="drawio-setting">
-        <?php p($l->t("When you upgraded from a version older than 4.3.0 you may have to fix the Nextcloud MIME type settings. Please see the instructions at GitHub:")) ?>
+        <?php p($l->t("When you upgraded from a version older than 4.3.0, older versions of this app modified files of the Nextcloud core. The file type icons are removed automatically, but core/js/mimetypelist.js has to be restored manually to fix the code integrity check. Please see the instructions at GitHub:")) ?>
         <a href="https://github.com/arnowelzel/drawio-nextcloud/wiki/FAQ">https://github.com/arnowelzel/drawio-nextcloud/wiki/FAQ</a>
     </div>
 

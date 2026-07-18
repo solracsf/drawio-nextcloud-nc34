@@ -130,7 +130,7 @@ final class EditorControllerTest extends TestCase {
     }
 
     private function givenUserFile(File $file, string $relativePath = '/Test.drawio'): void {
-        $this->root->method('getById')->willReturn([$file]);
+        $this->root->method('getFirstNodeById')->willReturn($file);
         $userFolder = $this->createMock(Folder::class);
         $userFolder->method('getRelativePath')->willReturn($relativePath);
         $this->root->method('getUserFolder')->willReturn($userFolder);
@@ -155,7 +155,7 @@ final class EditorControllerTest extends TestCase {
         $this->lockingProvider->expects($this->once())
             ->method('releaseLock')->with('drawio_97', ILockingProvider::LOCK_SHARED);
 
-        $response = $this->createController()->load('97', null);
+        $response = $this->createController()->load(97, null);
 
         $this->assertInstanceOf(DataResponse::class, $response);
         $this->assertSame(Http::STATUS_OK, $response->getStatus());
@@ -177,11 +177,11 @@ final class EditorControllerTest extends TestCase {
         $this->loginAs();
         $folder = $this->createMock(Folder::class);
         $folder->method('isReadable')->willReturn(true);
-        $this->root->method('getById')->willReturn([$folder]);
+        $this->root->method('getFirstNodeById')->willReturn($folder);
         $userFolder = $this->createMock(Folder::class);
         $this->root->method('getUserFolder')->willReturn($userFolder);
 
-        $response = $this->createController()->load('97', null);
+        $response = $this->createController()->load(97, null);
 
         $this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
         $this->assertSame('You can not open a folder', $response->getData()['message']);
@@ -194,7 +194,7 @@ final class EditorControllerTest extends TestCase {
 
         $this->lockingProvider->expects($this->never())->method('acquireLock');
 
-        $response = $this->createController()->load('97', null);
+        $response = $this->createController()->load(97, null);
 
         $this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
         $this->assertStringContainsString('too big', $response->getData()['message']);
@@ -211,9 +211,9 @@ final class EditorControllerTest extends TestCase {
 
     public function testLoadUnknownFileIdIsNotFound(): void {
         $this->loginAs();
-        $this->root->method('getById')->willReturn([]);
+        $this->root->method('getFirstNodeById')->willReturn(null);
 
-        $response = $this->createController()->load('404', null);
+        $response = $this->createController()->load(404, null);
 
         $this->assertSame(Http::STATUS_NOT_FOUND, $response->getStatus());
     }
@@ -221,9 +221,9 @@ final class EditorControllerTest extends TestCase {
     public function testLoadUnreadableFileIsForbidden(): void {
         $this->loginAs();
         $file = $this->createFile(['readable' => false]);
-        $this->root->method('getById')->willReturn([$file]);
+        $this->root->method('getFirstNodeById')->willReturn($file);
 
-        $response = $this->createController()->load('97', null);
+        $response = $this->createController()->load(97, null);
 
         $this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
     }
@@ -235,7 +235,7 @@ final class EditorControllerTest extends TestCase {
         $this->lockingProvider->method('acquireLock')->willThrowException(new LockedException('drawio_97'));
         $this->lockingProvider->expects($this->never())->method('releaseLock');
 
-        $response = $this->createController()->load('97', null);
+        $response = $this->createController()->load(97, null);
 
         $this->assertSame(Http::STATUS_CONFLICT, $response->getStatus());
         $this->assertSame('The file is locked.', $response->getData()['message']);
@@ -279,7 +279,7 @@ final class EditorControllerTest extends TestCase {
         $this->shareManager->method('getShareByToken')->willReturn($share);
         $this->shareAuth->method('isAuthenticated')->willReturn(true);
 
-        $response = $this->createController()->load('314', 'tok123');
+        $response = $this->createController()->load(314, 'tok123');
 
         $this->assertSame(Http::STATUS_OK, $response->getStatus());
         $this->assertSame(314, $response->getData()['id']);
@@ -294,7 +294,7 @@ final class EditorControllerTest extends TestCase {
         $this->shareManager->method('getShareByToken')->willReturn($share);
         $this->shareAuth->method('isAuthenticated')->willReturn(true);
 
-        $response = $this->createController()->load('999', 'tok123');
+        $response = $this->createController()->load(999, 'tok123');
 
         $this->assertSame(Http::STATUS_NOT_FOUND, $response->getStatus());
     }
@@ -332,7 +332,7 @@ final class EditorControllerTest extends TestCase {
         $file = $this->createFile(['created' => 0, 'uploaded' => 1650000000]);
         $this->givenUserFile($file);
 
-        $response = $this->createController()->getFileInfo('97', null);
+        $response = $this->createController()->getFileInfo(97, null);
 
         $this->assertSame(1650000000, $response->getData()['created']);
     }
@@ -351,7 +351,7 @@ final class EditorControllerTest extends TestCase {
         $this->lockingProvider->expects($this->once())
             ->method('releaseLock')->with('drawio_97', ILockingProvider::LOCK_EXCLUSIVE);
 
-        $response = $this->createController()->save('97', null, '<mxfile>new</mxfile>', 'etag1');
+        $response = $this->createController()->save(97, null, '<mxfile>new</mxfile>', 'etag1');
 
         $this->assertSame(Http::STATUS_OK, $response->getStatus());
         $data = $response->getData();
@@ -368,7 +368,7 @@ final class EditorControllerTest extends TestCase {
 
         $this->lockingProvider->expects($this->once())->method('releaseLock');
 
-        $response = $this->createController()->save('97', null, '<mxfile/>', 'stale-etag');
+        $response = $this->createController()->save(97, null, '<mxfile/>', 'stale-etag');
 
         $this->assertSame(Http::STATUS_CONFLICT, $response->getStatus());
         $this->assertSame('The file you are working on was updated in the meantime.', $response->getData()['message']);
@@ -377,14 +377,15 @@ final class EditorControllerTest extends TestCase {
     public function testSaveTreatsPostSaveHookFailureAsSuccessWhenEtagChanged(): void {
         $this->loginAs();
         $file = $this->createFile(['etagSequence' => true]);
-        $file->method('getEtag')->willReturnOnConsecutiveCalls('etag1', 'etag2');
+        // etag1 for the conflict check, etag2 afterwards: the file was written
+        $file->method('getEtag')->willReturnOnConsecutiveCalls('etag1', 'etag2', 'etag2');
         $file->method('putContent')->willThrowException(new \RuntimeException('activity hook failed'));
         $this->givenUserFile($file);
 
         $this->logger->expects($this->once())->method('warning')
             ->with($this->stringContains('Post-save hook error'));
 
-        $response = $this->createController()->save('97', null, '<mxfile/>', 'etag1');
+        $response = $this->createController()->save(97, null, '<mxfile/>', 'etag1');
 
         $this->assertSame(Http::STATUS_OK, $response->getStatus());
         $this->assertSame('etag2', $response->getData()['etag']);
@@ -396,7 +397,7 @@ final class EditorControllerTest extends TestCase {
         $file->method('putContent')->willThrowException(new \RuntimeException('write failed'));
         $this->givenUserFile($file);
 
-        $response = $this->createController()->save('97', null, '<mxfile/>', 'etag1');
+        $response = $this->createController()->save(97, null, '<mxfile/>', 'etag1');
 
         $this->assertSame(Http::STATUS_INTERNAL_SERVER_ERROR, $response->getStatus());
     }
@@ -407,21 +408,21 @@ final class EditorControllerTest extends TestCase {
         $this->givenUserFile($file);
         $file->expects($this->never())->method('putContent');
 
-        $response = $this->createController()->save('97', null, '<mxfile/>', 'etag1');
+        $response = $this->createController()->save(97, null, '<mxfile/>', 'etag1');
 
         $this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
         $this->assertSame('Insufficient permissions', $response->getData()['message']);
     }
 
     public function testSaveWithoutEtagComplainsAboutEtag(): void {
-        $response = $this->createController()->save('97', null, '<mxfile/>', '');
+        $response = $this->createController()->save(97, null, '<mxfile/>', '');
 
         $this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
         $this->assertSame('File etag not supplied', $response->getData()['message']);
     }
 
     public function testSaveWithoutContentComplainsAboutContent(): void {
-        $response = $this->createController()->save('97', null, '', 'etag1');
+        $response = $this->createController()->save(97, null, '', 'etag1');
 
         $this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
         $this->assertSame('File content not supplied', $response->getData()['message']);
@@ -439,7 +440,7 @@ final class EditorControllerTest extends TestCase {
             ->with('97.png', 'raw-png-bytes');
         $this->appData->method('getFolder')->with('previews')->willReturn($previewFolder);
 
-        $response = $this->createController()->savePreview('97', null, base64_encode('raw-png-bytes'));
+        $response = $this->createController()->savePreview(97, null, base64_encode('raw-png-bytes'));
 
         $this->assertSame(Http::STATUS_OK, $response->getStatus());
         $this->assertSame('OK', $response->getData());
@@ -455,7 +456,7 @@ final class EditorControllerTest extends TestCase {
         $this->appData->method('getFolder')->willThrowException(new \OCP\Files\NotFoundException());
         $this->appData->expects($this->once())->method('newFolder')->with('previews')->willReturn($previewFolder);
 
-        $response = $this->createController()->savePreview('97', null, base64_encode('x'));
+        $response = $this->createController()->savePreview(97, null, base64_encode('x'));
 
         $this->assertSame(Http::STATUS_OK, $response->getStatus());
     }
@@ -468,13 +469,13 @@ final class EditorControllerTest extends TestCase {
         $previewFolder->expects($this->never())->method('newFile');
         $this->appData->method('getFolder')->willReturn($previewFolder);
 
-        $response = $this->createController()->savePreview('97', null, base64_encode('x'));
+        $response = $this->createController()->savePreview(97, null, base64_encode('x'));
 
         $this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
     }
 
     public function testSavePreviewWithoutContentsIsBadRequest(): void {
-        $response = $this->createController()->savePreview('97', null, '');
+        $response = $this->createController()->savePreview(97, null, '');
 
         $this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
     }
@@ -493,9 +494,9 @@ final class EditorControllerTest extends TestCase {
         $dir->method('isCreatable')->willReturn(true);
         $dir->method('getNonExistingName')->with('New.drawio')->willReturn('New.drawio');
         $dir->expects($this->once())->method('newFile')->with('New.drawio', ' ')->willReturn($file);
-        $this->root->method('getById')->willReturn([$dir]);
+        $this->root->method('getFirstNodeById')->willReturn($dir);
 
-        $result = $this->createController()->create('New.drawio', '5', null);
+        $result = $this->createController()->create('New.drawio', 5, null);
 
         $this->assertSame([
             'id' => 98,
@@ -515,9 +516,9 @@ final class EditorControllerTest extends TestCase {
         $dir = $this->createMock(Folder::class);
         $dir->method('isCreatable')->willReturn(false);
         $dir->expects($this->never())->method('newFile');
-        $this->root->method('getById')->willReturn([$dir]);
+        $this->root->method('getFirstNodeById')->willReturn($dir);
 
-        $result = $this->createController()->create('New.drawio', '5', null);
+        $result = $this->createController()->create('New.drawio', 5, null);
 
         $this->assertSame("You don't have enough permission to create file", $result['error']);
     }
@@ -528,9 +529,9 @@ final class EditorControllerTest extends TestCase {
         $dir->method('isCreatable')->willReturn(true);
         $dir->method('getNonExistingName')->willReturn('New.drawio');
         $dir->method('newFile')->willThrowException(new NotPermittedException());
-        $this->root->method('getById')->willReturn([$dir]);
+        $this->root->method('getFirstNodeById')->willReturn($dir);
 
-        $result = $this->createController()->create('New.drawio', '5', null);
+        $result = $this->createController()->create('New.drawio', 5, null);
 
         $this->assertSame("Can't create file", $result['error']);
     }
@@ -544,7 +545,7 @@ final class EditorControllerTest extends TestCase {
             ->with('core.login.showLoginForm', ['redirect_url' => '/apps/drawio/edit?fileId=97'])
             ->willReturn('/login?redirect_url=x');
 
-        $response = $this->createController()->index('97');
+        $response = $this->createController()->index(97);
 
         $this->assertInstanceOf(RedirectResponse::class, $response);
         $this->assertSame('/login?redirect_url=x', $response->getRedirectURL());
@@ -563,7 +564,7 @@ final class EditorControllerTest extends TestCase {
         $this->appConfig->method('GetDrawioConfig')->willReturn('{}');
         $this->l10nFactory->method('findLanguage')->willReturn('pt_BR');
 
-        $response = $this->createController()->index('97', null, false, false);
+        $response = $this->createController()->index(97, null, false, false);
 
         $this->assertInstanceOf(TemplateResponse::class, $response);
         $this->assertNotInstanceOf(PublicTemplateResponse::class, $response);
@@ -573,7 +574,7 @@ final class EditorControllerTest extends TestCase {
         $this->assertSame('https://draw.example.com/editor', $params['drawioUrl']);
         $this->assertSame('custom=1', $params['drawioUrlArgs']);
         $this->assertSame('pt', $params['drawioLang']);
-        $this->assertSame('97', $params['fileId']);
+        $this->assertSame(97, $params['fileId']);
 
         $policy = $response->getContentSecurityPolicy()->buildPolicy();
         $this->assertMatchesRegularExpression('#script-src[^;]*https://draw\.example\.com/editor#', $policy);
@@ -608,7 +609,7 @@ final class EditorControllerTest extends TestCase {
     // ---- versions ----
 
     public function testGetFileRevisionsWithoutVersionManagerIsRejected(): void {
-        $response = $this->createController()->getFileRevisions('97');
+        $response = $this->createController()->getFileRevisions(97);
 
         $this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
         $this->assertSame('Versions plugin is not enabled', $response->getData()['message']);
@@ -627,7 +628,7 @@ final class EditorControllerTest extends TestCase {
         $versionManager->method('getVersionsForFile')->willReturn(['v1' => $version]);
         $this->versionManager = $versionManager;
 
-        $response = $this->createController()->getFileRevisions('97');
+        $response = $this->createController()->getFileRevisions(97);
 
         $this->assertSame(Http::STATUS_OK, $response->getStatus());
         $this->assertSame([['revId' => 1234, 'timestamp' => 1700000000]], $response->getData());
@@ -644,14 +645,14 @@ final class EditorControllerTest extends TestCase {
         $versionManager->method('getVersionFile')->willReturn($versionFile);
         $this->versionManager = $versionManager;
 
-        $response = $this->createController()->loadFileVersion('97', '1234');
+        $response = $this->createController()->loadFileVersion(97, '1234');
 
         $this->assertSame(Http::STATUS_OK, $response->getStatus());
         $this->assertSame('<mxfile>old</mxfile>', $response->getData());
     }
 
     public function testLoadFileVersionWithoutVersionManagerIsRejected(): void {
-        $response = $this->createController()->loadFileVersion('97', '1234');
+        $response = $this->createController()->loadFileVersion(97, '1234');
 
         $this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
     }

@@ -168,6 +168,40 @@ final class EditorApiE2eTest extends E2ETestCase {
         $this->assertMatchesRegularExpression('#script-src[^;]*https://embed\.diagrams\.net#', $csp);
     }
 
+    /**
+     * The editor page hands its configuration to the frontend as base64 encoded
+     * JSON. Whiteboards must select the sketch UI, diagrams must not.
+     *
+     * @return array<string, mixed>
+     */
+    private function editorPageData(bool $isWB): array {
+        $response = self::apiClient()->get('/index.php/apps/drawio/edit', [
+            'query' => ['fileId' => self::$fileId, 'isWB' => $isWB ? 'true' : 'false'],
+            'headers' => ['Accept' => 'text/html'],
+        ]);
+        $this->assertSame(200, $response->getStatusCode());
+
+        preg_match('#<div style="display: none" id="drawioData">([^<]+)</div>#', (string)$response->getBody(), $matches);
+        $this->assertNotEmpty($matches[1] ?? '', 'No drawioData payload found on the editor page');
+
+        return self::decodeJson((string)base64_decode($matches[1]));
+    }
+
+    public function testWhiteboardModeSelectsTheSketchUi(): void {
+        $data = $this->editorPageData(true);
+
+        $this->assertTrue($data['isWB']);
+        $this->assertStringContainsString('ui=sketch', $data['frame_params']);
+    }
+
+    public function testDiagramModeUsesTheConfiguredTheme(): void {
+        $data = $this->editorPageData(false);
+
+        $this->assertFalse($data['isWB']);
+        $this->assertStringNotContainsString('ui=sketch', $data['frame_params']);
+        $this->assertStringContainsString('ui=' . $data['drawioTheme'], $data['frame_params']);
+    }
+
     public function testCreateEndpointCreatesEmptyDiagram(): void {
         $rootId = self::davStat('')['fileid'];
         $name = 'E2E-create-' . uniqid() . '.drawio';
